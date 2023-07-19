@@ -1,0 +1,97 @@
+
+val df = spark.read.format("csv").option("inferSchema","true").option("ignoreLeadingWhiteSpace","true").load("hdfs://hdpmst:9000/data/housing.data").toDF("CRIM","ZN","INDUS","CHAS","NOX","RM","AGE","DIS","RAD","TAX","PTRATIO","B","LSTAT","MEDV")
+
+val df1 = df.withColumn("label", 'MEDV)
+
+val Array(trainingData, testData) = df1.randomSplit(Array(0.7,0.3),11L)
+
+trainingData.cache
+testData.cache
+
+val modelExec1 = new Thread(new Runnable {
+ def run() {
+
+   import org.apache.spark.ml.feature.VectorAssembler
+   val va = new VectorAssembler().setOutputCol("features").setInputCols(Array("CRIM","ZN","INDUS","CHAS","NOX","RM","AGE","DIS","RAD","TAX","PTRATIO","B","LSTAT"))
+
+   import org.apache.spark.ml.feature.StandardScaler
+   val stdScaler = new StandardScaler().
+   setWithStd(true).
+   setWithMean(true).
+   setInputCol("features").
+   setOutputCol("scaledFeatures")
+
+   import org.apache.spark.ml.regression.LinearRegression
+   val lr = new LinearRegression
+   lr.setFitIntercept(true).setFeaturesCol("scaledFeatures")
+
+   import org.apache.spark.ml.Pipeline
+   val pipeline = new Pipeline().setStages(Array(va,stdScaler,lr))
+
+   import org.apache.spark.ml.tuning.{ParamGridBuilder, CrossValidator}
+
+   val paramGrid = new ParamGridBuilder().
+   addGrid(lr.regParam, Array(1, 0.1, 0.01, 0.001)).
+   addGrid(lr.maxIter, Array(10, 20, 40, 100)).build()
+
+   import org.apache.spark.ml.evaluation.RegressionEvaluator
+
+   val cv = new CrossValidator().
+   setEstimator(pipeline).
+   setEvaluator(new RegressionEvaluator).
+   setEstimatorParamMaps(paramGrid).
+   setNumFolds(3)
+
+   val model = cv.fit(trainingData)
+
+   import org.apache.spark.ml.PipelineModel
+   val bestmodel = model.bestModel.asInstanceOf[PipelineModel]
+
+   val pred = bestmodel.transform(testData)
+
+   println("Logistic Regression")
+   pred.select('label,'prediction).show(5)
+ }
+})
+
+
+val modelExec2 = new Thread(new Runnable {
+ def run() {
+
+   import org.apache.spark.ml.feature.VectorAssembler
+   val va = new VectorAssembler().setOutputCol("features").setInputCols(Array("CRIM","ZN","INDUS","CHAS","NOX","RM","AGE","DIS","RAD","TAX","PTRATIO","B","LSTAT"))
+
+   import org.apache.spark.ml.regression.DecisionTreeRegressor
+   val dt = new DecisionTreeRegressor().setFeaturesCol("features")
+
+   import org.apache.spark.ml.Pipeline
+   val pipeline = new Pipeline().setStages(Array(va,dt))
+
+   import org.apache.spark.ml.tuning.{ParamGridBuilder, CrossValidator}
+
+   val paramGrid = new ParamGridBuilder().
+   addGrid(dt.maxDepth, Array(7, 10, 20)).
+   addGrid(dt.maxBins, Array(16, 32, 48)).build()
+
+   import org.apache.spark.ml.evaluation.RegressionEvaluator
+
+   val cv = new CrossValidator().
+   setEstimator(pipeline).
+   setEvaluator(new RegressionEvaluator).
+   setEstimatorParamMaps(paramGrid).
+   setNumFolds(3)
+
+   val model = cv.fit(trainingData)
+
+   import org.apache.spark.ml.PipelineModel
+   val bestmodel = model.bestModel.asInstanceOf[PipelineModel]
+
+   val pred = bestmodel.transform(testData)
+
+   println("Decision Tree")
+   pred.select('label,'prediction).show(5)
+ }
+})
+
+modelExec1.start
+modelExec2.start

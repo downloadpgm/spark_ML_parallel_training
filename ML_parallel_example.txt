@@ -1,0 +1,52 @@
+
+import org.apache.spark.ml.classification.LogisticRegression
+import org.apache.spark.ml.linalg.{Vector, Vectors}
+import org.apache.spark.sql.Row
+
+val lr = new LogisticRegression()
+
+val test = spark.createDataFrame(Seq(
+ (0.0, Vectors.dense(-0.2, 9.3, 0.9)),
+ (1.0, Vectors.dense(1.1, 6.6, -0.4)),
+ (1.0, Vectors.dense(3.8, 12.7, 2.0))
+)).toDF("label", "features")
+
+val modelExec1 = new Thread(new Runnable {
+ def run() {
+   val train = spark.createDataFrame(Seq(
+   (1.0, Vectors.dense(0.4, 4.3, -3.4)),
+   (1.0, Vectors.dense(1.2, 9.8, -9.5)),
+   (0.0, Vectors.dense(-0.1, 12.4, -2.3)),
+   (0.0, Vectors.dense(-1.9, 8.7, -4.6))
+   )).toDF("label", "features")
+   val model = lr.fit(train)
+   model.transform(test)
+   .select("features", "label", "probability", "prediction")
+   .collect()
+   .foreach { case Row(features: Vector, label: Double, prob: Vector, prediction: Double) =>
+   println(s"Features 1: $features, Label: $label => Probability: $prob, Prediction: $prediction")
+   }
+ }
+})
+
+
+val modelExec2 = new Thread(new Runnable {
+ def run() {
+   val train = spark.createDataFrame(Seq(
+   (0.0, Vectors.dense(0.3, 4.5, 10.1)),
+   (1.0, Vectors.dense(3.2, 0.0, -6.3)),
+   (1.0, Vectors.dense(0.2, -8.6, 5.4)),
+   (1.0, Vectors.dense(0.1, 6.1, -4.5))
+   )).toDF("label", "features")
+   val model = lr.fit(train)
+   model.transform(test)
+   .select("features", "label", "probability", "prediction")
+   .collect()
+   .foreach { case Row(features: Vector, label: Double, prob: Vector, prediction: Double) =>
+   println(s"Features 2: $features, Label: $label => Probability: $prob, Prediction: $prediction")
+   }
+ }
+})
+
+modelExec1.start()
+modelExec2.start()
